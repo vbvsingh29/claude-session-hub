@@ -1,0 +1,469 @@
+<!doctype html><html><head><meta charset="utf-8"><title>Claude Session Hub</title>
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/xterm@5.3.0/css/xterm.css"><script src="https://cdn.jsdelivr.net/npm/xterm@5.3.0/lib/xterm.js"></script><script src="https://cdn.jsdelivr.net/npm/xterm-addon-fit@0.8.0/lib/xterm-addon-fit.js"></script><link rel="preconnect" href="https://fonts.googleapis.com"><link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@400&display=swap">
+<style>
+/* layout: fixed project rail + scrolling workspace; summary strip first, detail below */
+:root{--bg:#f6f7f9;--panel:#fff;--fg:#14171c;--mut:#5b6471;--bd:#e3e6eb;--hov:#eef1f5;--ac:#2a78d6;--acfg:#fff;--good:#008300;
+--s1:#2a78d6;--s2:#eb6834;--s3:#1baf7a;--s4:#eda100;color-scheme:light;
+--ui:Inter,system-ui,-apple-system,"Segoe UI",sans-serif;--mono:"JetBrains Mono",ui-monospace,Menlo,monospace}
+@media(prefers-color-scheme:dark){:root:not([data-theme="light"]){--bg:#111418;--panel:#1a1d22;--fg:#e8eaee;--mut:#a0a8b4;--bd:#2b3038;--hov:#242830;--ac:#3987e5;--good:#0ca30c;--s1:#3987e5;--s2:#d95926;--s3:#199e70;--s4:#c98500;color-scheme:dark}}
+:root[data-theme="dark"]{--bg:#111418;--panel:#1a1d22;--fg:#e8eaee;--mut:#a0a8b4;--bd:#2b3038;--hov:#242830;--ac:#3987e5;--good:#0ca30c;--s1:#3987e5;--s2:#d95926;--s3:#199e70;--s4:#c98500;color-scheme:dark}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--fg);font:14px/1.45 var(--ui);display:flex;height:100vh}
+aside{width:280px;background:var(--panel);border-right:1px solid var(--bd);overflow:auto;padding:16px 12px;flex-shrink:0}
+main{flex:1;min-width:0;overflow:auto;padding:20px 24px}
+h1{font-size:15px;font-weight:600;margin:0 0 4px}.mut{color:var(--mut);font-size:12px}
+.proj{padding:7px 9px;border-radius:7px;cursor:pointer;display:flex;justify-content:space-between;gap:8px;word-break:break-all;font-size:13px}
+.proj:hover{background:var(--hov)}.proj.sel{background:var(--hov);box-shadow:inset 3px 0 0 var(--ac)}
+.badge{background:var(--hov);color:var(--mut);border-radius:10px;padding:1px 8px;font-size:11px;white-space:nowrap;text-decoration:none}
+.run{background:var(--good);color:#fff}
+.bar{display:flex;gap:6px;flex-wrap:wrap;margin:10px 0;align-items:center}
+button,select,input,textarea{font:inherit;color:var(--fg);background:var(--panel);border:1px solid var(--bd);border-radius:7px;padding:5px 11px}
+button{cursor:pointer}button:hover{background:var(--hov)}button.on{background:var(--ac);color:var(--acfg);border-color:var(--ac)}
+:focus-visible{outline:2px solid var(--ac);outline-offset:1px}
+.card{border:1px solid var(--bd);background:var(--panel);border-radius:10px;padding:14px 16px;margin:12px 0}
+.card h3{margin:0 0 4px;font-size:14px;font-weight:600;display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+.row{display:flex;gap:6px;flex-wrap:wrap;align-items:center;margin-top:8px}
+.q{white-space:pre-wrap;margin:6px 0;font-size:13px;overflow-wrap:anywhere}.q b{color:var(--mut);font-weight:500}
+textarea{width:100%;min-height:70px;font-family:var(--mono);font-size:12px}
+.live{background:var(--bg);border:1px solid var(--bd);border-radius:7px;padding:8px;max-height:420px;overflow:auto;font:12px var(--mono);margin-top:8px}
+.live .ln{white-space:pre-wrap;margin:2px 0}.live .you{color:var(--mut)}.live .tool{color:var(--fg);opacity:.75}.live .res{color:var(--mut)}.live .err{color:#d33}.live .sys{color:var(--mut);font-style:italic}
+.chip{border:1px solid var(--bd);background:var(--panel);border-radius:999px;padding:3px 10px;cursor:pointer;font-size:12px}.chip.on{border-color:var(--ac);color:var(--ac)}
+#tmain{height:calc(100vh - 120px);min-height:360px}.tv{height:100%;background:var(--bg);border:1px solid var(--bd);border-radius:8px;padding:6px}.tv .xterm{height:100%}
+button.primary{background:var(--ac);color:var(--acfg);border-color:var(--ac)}
+#chatv{position:fixed;inset:0;z-index:50;background:var(--bg);display:flex;flex-direction:column}#chatv[hidden]{display:none}
+.chd{display:flex;justify-content:space-between;gap:10px;align-items:center;padding:10px 16px;border-bottom:1px solid var(--bd);flex-wrap:wrap}
+.cbody{flex:1;overflow:auto;padding:14px 16px;max-width:980px;width:100%;margin:0 auto}
+.cm{margin:10px 0}.cw{font-size:11px;color:var(--mut);margin-bottom:3px}.cb{white-space:pre-wrap;line-height:1.5;overflow-wrap:anywhere}
+.cu .cb{background:var(--panel);border:1px solid var(--bd);border-radius:8px;padding:8px 12px}.ca .cb{padding:0 2px}
+.ct,.co{font:12px var(--mono);color:var(--mut)}.ce summary{color:#d33}.cbody.notools .ct,.cbody.notools .co{display:none}
+.cb pre,.co .acts{font-size:12px;font-weight:400;margin-left:6px}.acts a{margin-right:8px}
+pre{white-space:pre-wrap;margin:6px 0}.cb code{font:12px var(--mono);background:var(--hov);padding:1px 4px;border-radius:4px}
+pre{white-space:pre-wrap;background:var(--bg);border:1px solid var(--bd);border-radius:7px;padding:8px;max-height:300px;overflow:auto;font:12px var(--mono)}
+details{margin:8px 0}summary{cursor:pointer;color:var(--ac);font-weight:500}a{color:var(--ac)}
+.pill{display:inline-flex;gap:5px;align-items:center;font-size:11px;color:var(--mut);background:var(--hov);border-radius:10px;padding:1px 8px}
+.pill i{width:8px;height:8px;border-radius:50%;background:var(--s1)}
+.st-later i{background:var(--s2)}.st-revisit i{background:var(--s3)}.st-done i{background:var(--s4)}
+/* summary strip */
+#stats{display:grid;grid-template-columns:repeat(4,minmax(0,1fr)) ;gap:12px;margin:4px 0 14px}
+.tile{background:var(--panel);border:1px solid var(--bd);border-radius:10px;padding:12px 14px}
+.tile .n{font-size:26px;font-weight:600;font-variant-numeric:tabular-nums;line-height:1.1}
+.tile .l{color:var(--mut);font-size:12px}
+.wide{grid-column:span 2;min-width:0}
+.stack{display:flex;gap:2px;height:14px;margin:10px 0 8px}
+.stack div{border-radius:4px;min-width:3px}
+.leg{display:flex;gap:14px;flex-wrap:wrap;font-size:12px;color:var(--mut)}
+.leg i{display:inline-block;width:10px;height:10px;border-radius:3px;margin-right:5px;vertical-align:-1px}
+.leg b{color:var(--fg);font-weight:600;font-variant-numeric:tabular-nums}
+#tip{position:fixed;pointer-events:none;background:var(--fg);color:var(--bg);font-size:12px;padding:4px 8px;border-radius:6px;z-index:9;display:none;white-space:nowrap}
+svg text{fill:var(--mut);font:11px var(--ui)}
+@media(max-width:800px){body{flex-direction:column;height:auto}aside{width:auto;max-height:200px;border-right:0;border-bottom:1px solid var(--bd)}main{padding:14px 16px;overflow:visible}#stats{grid-template-columns:repeat(2,minmax(0,1fr))}}
+@media(prefers-reduced-motion:no-preference){button,.proj{transition:background .12s}}
+.car{display:inline-block;width:22px;text-align:center;margin:-4px 0 -4px -6px;padding:4px 0;border-radius:4px;color:var(--mut);cursor:pointer}.car:hover{background:var(--bd)}.grp{font-weight:600}.kid{margin-left:18px;font-weight:400;font-size:12px}.board{display:grid;grid-template-columns:repeat(4,minmax(220px,1fr));gap:12px;overflow-x:auto;align-items:start}
+.col{background:var(--panel);border:1px solid var(--bd);border-radius:10px;padding:8px;min-height:180px}.col.over{outline:2px dashed var(--ac)}
+.colh{font-weight:600;display:flex;gap:6px;align-items:center;margin-bottom:6px}.colh i{width:10px;height:10px;border-radius:3px}
+.bc{border:1px solid var(--bd);background:var(--bg);border-radius:8px;padding:8px;margin:6px 0;cursor:grab}.bt{font-weight:500;font-size:13px;overflow-wrap:anywhere}
+.foc{outline:2px solid var(--ac);outline-offset:2px}.hl{background:color-mix(in srgb,var(--s4) 35%,transparent);border-radius:2px}
+#help{position:fixed;right:14px;bottom:14px;background:var(--panel);border:1px solid var(--bd);border-radius:10px;padding:10px 14px;font-size:12px;z-index:8;display:none;line-height:1.7}
+table{border-collapse:collapse;width:100%;font-size:12px}td,th{padding:5px 8px;border-bottom:1px solid var(--bd);text-align:left;overflow-wrap:anywhere}th{color:var(--mut);font-weight:500}.tw{overflow-x:auto}
+</style></head><body>
+<aside><h1>Claude Session Hub <button id="th" style="float:right;padding:1px 8px;font-size:11px">theme</button></h1><div class="mut" id="sum"></div><label class="mut" style="display:block;margin:8px 0"><input type="checkbox" id="hb" checked style="padding:0"> hide backup dirs</label><div id="projs"></div></aside>
+<main><div class="bar" id="tabs"></div><div id="chg" hidden></div><div id="newp" hidden></div><div id="trm" hidden></div><div id="skl" hidden></div><div id="hyp" hidden></div><div id="opt" hidden></div><div id="tkt" hidden></div><div id="wtp" hidden></div><div id="srp" hidden></div><div id="sess"><div class="bar"><select id="recent"></select><button id="qs" title="search inside all chat text">search chats</button><input id="q" placeholder="search all sessions" style="flex:1;min-width:160px"></div><div id="stats"></div><div class="bar" id="filters"></div><div id="rules"></div><div id="list"></div></div></main>
+<script>
+const $=s=>document.querySelector(s);
+const esc=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+const ST=['active','later','revisit','done'];
+let TK=[],TRE=null,openG=new Map(),pg=false,tab='sessions',D={sessions:[],liveProcs:0,jira:''},focusId='',proj='ALL',flt='all',rulesCache={},view='cards';
+const LSx={get:k=>{try{return localStorage.getItem('hub.'+k)}catch{return null}},set:(k,v)=>{try{localStorage.setItem('hub.'+k,v)}catch{}}};
+try{const t=LSx.get('theme');if(t)document.documentElement.dataset.theme=t;proj=LSx.get('proj')||'ALL';pg=LSx.get('pg')==='1';flt=LSx.get('flt')||'all';view=LSx.get('view')||'cards';openG=new Map(JSON.parse(LSx.get('open')||'[]'))}catch{}
+const api=(p,b)=>fetch(p,b?{method:'POST',headers:{'content-type':'application/json','x-hub':'1'},body:JSON.stringify(b)}:{}).then(r=>r.json());
+const ago=t=>{const s=(Date.now()-t)/1000;return s<60?'now':s<3600?Math.floor(s/60)+'m ago':s<86400?Math.floor(s/3600)+'h ago':Math.floor(s/86400)+'d ago'};
+const fmt=t=>t?new Date(t).toLocaleString([],{dateStyle:'medium',timeStyle:'short'}):'?';
+const link=s=>esc(s).replace(/(https?:\/\/[^\s<)]+)/g,'<a href="$1" target="_blank" rel="noopener">$1</a>').replace(TRE?new RegExp(TRE.source,'g'):/$^/,(m,o,str)=>!D.jira||str.slice(Math.max(0,o-2),o)==='">'||str.slice(o-1,o)==='/'?m:`<a href="${D.jira}${m}" target="_blank" rel="noopener">${m}</a>`);
+const tickets=s=>TRE?[...new Set(((s.name||'')+' '+s.title+' '+s.first+' '+s.last+' '+s.cwd).match(TRE)||[])]:[];
+const short=c=>c.replace(/^\/home\/[^/]+\//,'~/');
+async function load(){D=await api('/api/sessions');TK=D.tickets||[];TRE=TK.length?new RegExp('\\b(?:'+TK.join('|')+')-\\d+\\b','g'):null;draw()}
+function draw(){
+  const S=D.sessions.filter(s=>!($('#hb').checked&&(/\/backup(\/|$)/.test(s.repo||s.cwd)||/backup-/.test(s.cwd)))),by={};S.forEach(s=>(by[s.cwd]??=[]).push(s));
+  const run=S.filter(s=>s.running).length;
+  $('#sum').textContent=`${S.length} sessions · ${Object.keys(by).length} projects · ${run} running · ${D.liveProcs} claude procs`;
+  const gm={};S.forEach(s=>(gm[s.repo||s.cwd]??=[]).push(s));
+  const G=Object.entries(gm).map(([r,l])=>{const dirs={};l.forEach(s=>(dirs[s.cwd]??=[]).push(s));return{r,l,dirs,t:Math.max(...l.map(s=>s.mtime))}}).sort((a,b)=>b.t-a.t);
+  const kid=(r,d)=>{if(d===r)return 'main checkout';const b=d.split('/').pop(),rb=r.split('/').pop().toLowerCase().replace(/_/g,'-'),nb=b.toLowerCase().replace(/_/g,'-');return nb.startsWith(rb+'-')?b.slice(rb.length+1):b};
+  $('#projs').innerHTML=`<div class="proj ${proj==='ALL'?'sel':''}" data-p="ALL"><span>All projects</span><span class="badge">${S.length}</span></div>`+G.map(g=>{
+    const ds=Object.entries(g.dirs).sort((a,b)=>b[1][0].mtime-a[1][0].mtime),multi=ds.length>1||ds[0][0]!==g.r,live=g.l.some(s=>s.running);
+    const open=multi&&(openG.has(g.r)?openG.get(g.r):(proj===g.r||ds.some(([d])=>d===proj)));
+    return `<div class="proj grp ${proj===g.r&&pg?'sel':''}" data-p="${esc(g.r)}" data-g="1"><span>${multi?`<span class="car" data-car="${esc(g.r)}" data-open="${open?1:0}">${open?'&#9662;':'&#9656;'}</span> `:''}${esc(g.r.split('/').pop())}</span><span>${live?'<span class="badge run">live</span> ':''}<span class="badge">${g.l.length}</span></span></div>`+
+     (open?ds.map(([d,l])=>`<div class="proj kid ${proj===d&&!pg?'sel':''}" data-p="${esc(d)}"><span>${esc(kid(g.r,d))}</span><span>${l.some(s=>s.running)?'<span class="badge run">live</span> ':''}<span class="badge">${l.length}</span></span></div>`).join(''):'')}).join('');
+  document.querySelectorAll('#projs [data-p]').forEach(e=>e.onclick=ev=>{const c=ev.target.closest('[data-car]');if(c){ev.stopPropagation();const r=c.dataset.car,cur=c.dataset.open==='1';openG.set(r,!cur);draw();return}proj=e.dataset.p;pg=!!e.dataset.g;if(pg&&e.querySelector('[data-car]'))openG.set(proj,true);draw();loadRules();if(tab!=='sessions')setTab(tab)});
+  const cnt=k=>S.filter(s=>inProj(s)&&(k==='all'||(k==='running'?s.running:s.status===k))).length;
+  $('#filters').innerHTML=['all','running',...ST].map(k=>`<button class="${flt===k?'on':''}" data-f="${k}">${k} (${cnt(k)})</button>`).join('')+`<button id="vw">${view==='board'?'card view':'board view'}</button><button id="rf">refresh</button>`;
+  document.querySelectorAll('[data-f]').forEach(b=>b.onclick=()=>{flt=b.dataset.f;draw()});$('#rf').onclick=load;$('#vw').onclick=()=>{view=view==='board'?'cards':'board';draw()};
+  const qq=($('#q').value||'').toLowerCase();
+  const L=S.filter(s=>(!qq||(s.name+' '+s.title+' '+s.first+' '+s.last+' '+s.cwd+' '+s.id+' '+s.note).toLowerCase().includes(qq))&&inProj(s)&&(flt==='all'||(flt==='running'?s.running:s.status===flt)));
+  $('#list').innerHTML=(proj!=='ALL'?`<details open><summary>Send prompt to NEW session in ${esc(short(proj))}</summary>${sendBox('',proj)}</details>`:'')+L.map(card).join('')||'<p class="mut">none</p>';
+  stats(S);if(view==='board'){$('#list').innerHTML=board(L);bindBoard()}else bind();
+  const fc=focusId&&document.querySelector('.card[data-id="'+focusId+'"]');if(fc)fc.classList.add('foc');
+  syncHash();LSx.set('proj',proj);LSx.set('pg',pg?1:0);LSx.set('flt',flt);LSx.set('view',view);LSx.set('open',JSON.stringify([...openG]));
+}
+const SC={active:'--s1',later:'--s2',revisit:'--s3',done:'--s4'};
+function tipOn(el,t){el.onmousemove=e=>{const p=$('#tip');p.textContent=t;p.style.display='block';p.style.left=e.clientX+12+'px';p.style.top=e.clientY+12+'px'};el.onmouseleave=()=>$('#tip').style.display='none'}
+function stats(S){
+  const sc=S.filter(s=>inProj(s)),n=k=>sc.filter(s=>s.status===k).length,T=sc.length||1;
+  const open=n('later')+n('revisit');
+  const seg=ST.map(k=>({k,v:n(k)})).filter(x=>x.v);
+  const days=[...Array(14)].map((_,i)=>{const d=new Date();d.setHours(0,0,0,0);d.setDate(d.getDate()-(13-i));return d});
+  const cnt=days.map(d=>sc.filter(s=>s.mtime>=d&&s.mtime<d.getTime()+864e5).length),mx=Math.max(1,...cnt);
+  const W=420,H=110,bw=20,gap=(W-14*bw)/13,bars=days.map((d,i)=>{const h=cnt[i]/mx*80,x=i*(bw+gap);return `<g data-t="${d.toLocaleDateString([],{month:'short',day:'numeric'})}: ${cnt[i]} session${cnt[i]==1?'':'s'}"><rect x="${x}" y="0" width="${bw}" height="${H-14}" fill="transparent"/><path d="M${x} 96v${-h+3}a3 3 0 0 1 3-3h${bw-6}a3 3 0 0 1 3 3v${h-3}z" fill="var(--s1)" ${cnt[i]?'':'opacity=".25"'}/>${i%2==0?`<text x="${x+bw/2}" y="109" text-anchor="middle">${d.getDate()}</text>`:''}</g>`}).join('');
+  $('#stats').innerHTML=`<div class="tile"><div class="n">${sc.length}</div><div class="l">sessions</div></div>
+  <div class="tile"><div class="n">${sc.filter(s=>s.running).length}</div><div class="l">running now</div></div>
+  <div class="tile"><div class="n">${open}</div><div class="l">to revisit or later</div></div>
+  <div class="tile"><div class="n">${n('done')}</div><div class="l">done</div></div>
+  <div class="tile wide"><div class="l">By status</div><div class="stack">${seg.map(x=>`<div data-t="${x.k}: ${x.v}" style="flex:${x.v};background:var(${SC[x.k]})"></div>`).join('')}</div><div class="leg">${ST.map(k=>`<span><i style="background:var(${SC[k]})"></i>${k} <b>${n(k)}</b></span>`).join('')}</div></div>
+  <div class="tile wide"><div class="l">Sessions last touched, past 14 days</div><svg viewBox="0 0 ${W} ${H}" width="100%" role="img" aria-label="sessions per day"><line x1="0" x2="${W}" y1="96" y2="96" stroke="var(--bd)"/><line x1="0" x2="${W}" y1="56" y2="56" stroke="var(--bd)" stroke-dasharray="2 4"/><text x="0" y="52">${Math.round(mx/2)||''}</text><text x="${W}" y="12" text-anchor="end">peak ${mx}</text>${bars}</svg></div>`;
+  document.querySelectorAll('#stats [data-t]').forEach(e=>tipOn(e,e.dataset.t));
+}
+function sendBox(id,cwd){return `<div class="send" data-id="${esc(id)}" data-cwd="${esc(cwd)}"><textarea placeholder="prompt (runs headless: claude -p${id?' --resume':''})"></textarea><div class="row"><button class="go">Send</button><button class="stop" hidden>Stop</button><select class="mode" title="headless cannot ask permission; tools needing approval are denied unless allowed here"><option value="">default perms</option><option value="acceptEdits">auto-accept edits</option><option value="plan">plan only</option></select><span class="mut">headless run; avoid if this session is open in a terminal right now</span></div><div class="live" hidden></div></div>`}
+function card(s){
+  return `<div class="card" data-id="${s.id}"><h3>${esc(s.name||s.title||s.first.slice(0,80)||s.id)} ${s.running?'<span class="badge run">running</span>':''} <span class="pill st-${s.status}"><i></i>${s.status}</span></h3>
+  <div class="mut">${esc(short(s.cwd))} · ${(s.size/1024).toFixed(0)} KB · ${s.id}</div>
+  <div class="mut">created ${fmt(s.created)} · last interacted ${fmt(s.mtime)} (${ago(s.mtime)})</div>
+  ${tickets(s).length?`<div class="row">${tickets(s).map(k=>`${D.jira?`<a class="badge" href="${D.jira}${k}" target="_blank" rel="noopener">${k}</a>`:`<span class="badge">${k}</span>`}`).join('')}</div>`:''}
+  <div class="q"><b>started:</b> ${link(s.first)}</div><div class="q"><b>last ask:</b> ${link(s.last)}</div><div class="q"><b>last reply:</b> ${link(s.lastAssistant)}</div>
+  <div class="row">${ST.map(k=>`<button class="tag ${s.status===k?'on':''}" data-s="${k}">${k}</button>`).join('')}
+  <input class="note" placeholder="note" value="${esc(s.note)}" style="flex:1;min-width:140px">
+  <button class="rn">rename</button><button class="cp" data-c="cd ${esc(s.cwd)} &amp;&amp; claude --resume ${s.id}">copy resume cmd</button><button class="ho">copy handoff</button><button class="vc" title="read the full conversation here">view chat</button><button class="ot" title="open this session as a live Claude Code terminal">open in terminal</button></div>
+  <details class="cd"><summary>code changes done in this session</summary><div class="cdb mut">loading...</div></details><details class="sk"><summary>skills for this project + suggestions</summary><div class="skb mut">loading...</div></details><details><summary>send prompt to this session</summary>${sendBox(s.id,s.cwd)}</details></div>`}
+function bind(){
+  document.querySelectorAll('.card[data-id]').forEach(c=>{
+    const id=c.dataset.id,note=c.querySelector('.note');
+    c.querySelectorAll('.tag').forEach(b=>b.onclick=async()=>{await api('/api/tag',{id,status:b.dataset.s,note:note.value});load()});
+    note.onchange=async()=>{const s=D.sessions.find(x=>x.id===id);await api('/api/tag',{id,status:s.status,note:note.value});load()};
+    c.querySelector('.rn').onclick=async()=>{const s=D.sessions.find(x=>x.id===id);const n=prompt('Rename session (empty = reset)',s.name||s.title||'');if(n===null)return;await api('/api/tag',{id,name:n.trim()});load()};
+    c.querySelector('.vc').onclick=()=>openChat(id);
+    c.querySelector('.ot').onclick=()=>{const s=D.sessions.find(x=>x.id===id);openTerm(id,s.cwd)};
+    c.querySelector('.ho').onclick=async e=>{const t=await fetch('/api/handoff?id='+id).then(x=>x.text());try{await navigator.clipboard.writeText(t);e.target.textContent='copied'}catch{e.target.textContent='copy failed'}};
+    c.querySelector('.cp').onclick=e=>{navigator.clipboard.writeText(e.target.dataset.c.replace(/&amp;/g,'&'));e.target.textContent='copied'};
+  });
+  document.querySelectorAll('.card .cd').forEach(d=>d.addEventListener('toggle',async()=>{if(!d.open||d.dataset.l)return;d.dataset.l=1;d.querySelector('.cdb').innerHTML=chHtml(await api('/api/changes?id='+d.closest('.card').dataset.id),'')}));
+  document.querySelectorAll('.card .sk').forEach(d=>d.addEventListener('toggle',()=>{if(d.open&&!d.dataset.l){d.dataset.l=1;const c=d.closest('.card'),s=D.sessions.find(x=>x.id===c.dataset.id);loadSk(d.querySelector('.skb'),s.id,s.cwd)}}));
+  document.querySelectorAll('.send').forEach(b=>{
+    const ta=b.querySelector('textarea'),live=b.querySelector('.live'),btn=b.querySelector('.go'),stop=b.querySelector('.stop');let ac=null;
+    const add=(cls,t)=>{const d=document.createElement('div');d.className='ln '+cls;d.textContent=t;live.appendChild(d);live.scrollTop=live.scrollHeight;return d};
+    stop.onclick=()=>ac&&ac.abort();
+    btn.onclick=async()=>{
+      const prompt=ta.value;if(!prompt.trim())return;
+      btn.disabled=true;btn.textContent='running…';stop.hidden=false;live.hidden=false;live.innerHTML='';
+      add('you','> '+prompt);ta.value='';let cur=null,sid=null;ac=new AbortController();
+      try{
+        const r=await fetch('/api/send-stream',{method:'POST',signal:ac.signal,headers:{'content-type':'application/json','x-hub':'1'},body:JSON.stringify({id:b.dataset.id,cwd:b.dataset.cwd,prompt,mode:b.querySelector('.mode').value})});
+        const rd=r.body.getReader(),dec=new TextDecoder();let buf='';
+        const ev=o=>{
+          if(o.type==='system'&&o.subtype==='init'){sid=o.session_id;add('sys','session '+o.session_id.slice(0,8)+' · '+(o.model||''))}
+          else if(o.type==='stream_event'){const e=o.event||{};
+            if(e.type==='content_block_start'&&e.content_block?.type==='text')cur=add('ai','');
+            else if(e.type==='content_block_delta'&&e.delta?.type==='text_delta'){if(!cur)cur=add('ai','');cur.textContent+=e.delta.text;live.scrollTop=live.scrollHeight}
+            else if(e.type==='content_block_stop')cur=null}
+          else if(o.type==='assistant'){for(const c of o.message?.content||[])if(c.type==='tool_use')add('tool','⏺ '+c.name+' '+JSON.stringify(c.input).slice(0,300))}
+          else if(o.type==='user'){for(const c of o.message?.content||[])if(c.type==='tool_result'){const t=typeof c.content==='string'?c.content:(c.content||[]).map(x=>x.text||'').join('');add(c.is_error?'err':'res','  ⎿ '+t.slice(0,600))}}
+          else if(o.type==='result')add('sys',(o.is_error?'error: ':'done · ')+(o.duration_ms/1000).toFixed(1)+'s'+(o.total_cost_usd?' · $'+o.total_cost_usd.toFixed(3):'')+(o.is_error&&o.result?' · '+o.result:''))
+          else if(o.type==='hub_stderr')add('err',o.text)
+          else if(o.type==='hub_done'&&o.code)add('err','exit code '+o.code)};
+        for(;;){const {done,value}=await rd.read();if(done)break;buf+=dec.decode(value,{stream:true});let n;while((n=buf.indexOf('\n'))>=0){const ln=buf.slice(0,n);buf=buf.slice(n+1);if(ln.trim())try{ev(JSON.parse(ln))}catch{add('sys',ln)}}}
+      }catch(e){add('err',e.name==='AbortError'?'stopped':String(e))}
+      btn.disabled=false;btn.textContent='Send';stop.hidden=true;ac=null;if(b.closest('#newp'))load();else{const a=add('sys','finished — ');const l=document.createElement('a');l.href='#';l.textContent='refresh list';l.onclick=e=>{e.preventDefault();load()};a.appendChild(l)}if(sid&&!b.dataset.id){b.dataset.id=sid;ta.placeholder='follow-up (continues session '+sid.slice(0,8)+')'}
+    };
+    ta.addEventListener('keydown',e=>{if(e.key==='Enter'&&(e.ctrlKey||e.metaKey)){e.preventDefault();btn.click()}});
+  });
+}
+function chHtml(c,remote){
+  const f=c.files.map(x=>`<div class="mut">${x.writes?'new/overwritten':'edited'} x${x.edits+x.writes} - ${esc(short(x.path))}</div>`).join('')||'<div class="mut">no file edits</div>';
+  const cm=c.commits.map(x=>`<div>${remote?`<a href="${remote}/commit/${x.hash}" target="_blank" rel="noopener">${x.hash}</a>`:x.hash} <span class="mut">${esc(x.branch)}</span> ${link(x.msg)}</div>`).join('')||'<div class="mut">no commits</div>';
+  const pr=c.prs.map(u=>`<div><a href="${esc(u)}" target="_blank" rel="noopener">${esc(u.replace(/^https:\/\/[^/]+\//,''))}</a></div>`).join('')||'<div class="mut">no PRs</div>';
+  return `<b>Files (${c.files.length})</b>${f}<b>Commits (${c.commits.length})</b>${cm}<b>PRs (${c.prs.length})</b>${pr}`}
+async function drawChanges(){
+  const el=$('#chg');
+  if(proj==='ALL'){el.innerHTML='<p class="mut">Pick a project in the sidebar to see its git state and what its sessions changed.</p>';return}
+  el.innerHTML='<p class="mut">loading git info...</p>';
+  const [g,...cs]=await Promise.all([api('/api/git?cwd='+encodeURIComponent(proj)),...D.sessions.filter(inProj).slice(0,20).map(s=>api('/api/changes?id='+s.id).then(c=>({s,c})))]);
+  const sess=D.sessions.filter(inProj).slice(0,20);
+  let h=`<h1>${esc(short(proj))}</h1>`;
+  if(g.error)h+=`<p class="mut">${esc(g.error)}</p>`;else{
+    h+=`<div class="card"><h3>Branch: ${esc(g.branch||'(detached)')}</h3>`+
+      `<b>Pull requests</b>`+(g.prs.map(p=>`<div><a href="${esc(p.url)}" target="_blank" rel="noopener">#${p.number}</a> <span class="badge">${esc(p.state)}</span> ${esc(p.title)}</div>`).join('')||'<div class="mut">none for this branch (or gh not authed)</div>')+
+      `<br><b>Uncommitted (${g.status.length})</b><pre>${esc(g.status.join('\n')||'clean')}</pre>`+
+      `<b>Recent commits</b>`+g.log.map(x=>`<div>${g.remote?`<a href="${g.remote}/${g.host==='bb'?'commits':'commit'}/${x.hash}" target="_blank" rel="noopener">${x.hash}</a>`:x.hash} ${esc(x.msg)} <span class="mut">- ${esc(x.author)}, ${esc(x.when)}</span></div>`).join('')+`</div>`;}
+  h+='<h1>Changes made by sessions (latest 20)</h1>'+cs.map(({s,c})=>`<div class="card"><h3>${esc(s.name||s.title||s.first.slice(0,70)||s.id)} ${acts(s.id)}</h3><div class="mut">${fmt(s.created)} to ${fmt(s.mtime)}</div>${chHtml(c,g.remote||'')}</div>`).join('');
+  el.innerHTML=h;
+}
+async function loadRules(){
+  if(proj==='ALL'){$('#rules').innerHTML='';return}
+  const R=await api('/api/rules?cwd='+encodeURIComponent(proj)),RA=await api('/api/rules-audit?cwd='+encodeURIComponent(proj));
+  $('#rules').innerHTML=`<details><summary>Rules (CLAUDE.md) · ${R.length} file(s) apply to ${esc(short(proj))} · ${(RA.total/1024).toFixed(1)} KB loaded per session${RA.dups.length?` · ${RA.dups.length} duplicate line(s)`:''}</summary>${RA.dups.length?`<div class="q">Duplicated across files: ${RA.dups.slice(0,5).map(d=>esc(d.line)).join(' | ')}</div>`:''}`+
+   (R.map((r,i)=>`<div class="rule" data-p="${esc(r.path)}"><div class="mut">${esc(short(r.path))}</div><textarea style="min-height:160px">${esc(r.content)}</textarea><div class="row"><button class="save">Save</button><span class="mut"></span></div></div>`).join('')||'<p class="mut">no CLAUDE.md found</p>')+
+   `<div class="rule" data-p="${esc(proj+'/CLAUDE.md')}"><div class="mut">add a rule to ${esc(short(proj))}/CLAUDE.md (appended)</div><input class="add" style="width:100%" placeholder="new rule text"><div class="row"><button class="append">Append</button><span class="mut"></span></div></div></details>`;
+  document.querySelectorAll('.save').forEach(b=>b.onclick=async()=>{const d=b.closest('.rule');await api('/api/rules',{path:d.dataset.p,content:d.querySelector('textarea').value});b.nextElementSibling.textContent='saved'});
+  document.querySelectorAll('.append').forEach(b=>b.onclick=async()=>{const d=b.closest('.rule'),t=d.querySelector('.add').value.trim();if(!t)return;
+    const ex=R.find(r=>r.path===d.dataset.p);await api('/api/rules',{path:d.dataset.p,content:(ex?ex.content.replace(/\n*$/,'\n\n'):'')+'- '+t+'\n'});b.nextElementSibling.textContent='appended';loadRules()});
+}
+
+const inProj=s=>proj==='ALL'||(pg?(s.repo||s.cwd)===proj:s.cwd===proj);
+const mb=b=>(b/1048576).toFixed(0)+' MB';
+const TABS=[['sessions','Sessions','sess'],['new','New session','newp'],['term','Terminal','trm'],['changes','Code changes','chg'],['tickets','Tickets','tkt'],['wt','Worktrees','wtp'],['search','Search','srp'],['skills','Skills','skl'],['hyped','Hyped','hyp'],['opt','Optimize','opt']];
+function setTab(t,nopush){tab=t;$('#tabs').innerHTML=TABS.map(x=>`<button data-t="${x[0]}" class="${t===x[0]?'on':''}">${x[1]}</button>`).join('');
+  document.querySelectorAll('#tabs button').forEach(b=>b.onclick=()=>setTab(b.dataset.t));
+  TABS.forEach(x=>$('#'+x[2]).hidden=x[0]!==t);
+  ({changes:drawChanges,new:()=>drawNew(),term:()=>drawTerm(),tickets:drawTickets,wt:drawWt,search:()=>drawSearch(),skills:drawSkills,hyped:()=>drawHype(),opt:drawOpt})[t]?.();if(!nopush)syncHash()}
+
+
+
+const acts=id=>`<span class="acts"><a href="#" data-vc="${id}">view chat</a> <a href="#" data-ot="${id}">open in terminal</a></span>`;
+document.addEventListener('click',e=>{const a=e.target.closest('[data-vc],[data-ot]');if(!a)return;e.preventDefault();e.stopPropagation();
+  const id=a.dataset.vc||a.dataset.ot,s=D.sessions.find(x=>x.id===id);if(!s)return;a.dataset.vc?openChat(id):openTerm(id,s.cwd)},true);
+
+/* ---- URL routing: #/<tab>?p=<project>&g=1&f=<filter>&v=<view>&chat=<session id> ---- */
+let chatId='';
+function curHash(){const p=new URLSearchParams();if(proj!=='ALL')p.set('p',proj);if(pg)p.set('g','1');if(flt!=='all')p.set('f',flt);if(view!=='cards')p.set('v',view);if(chatId)p.set('chat',chatId);const q=p.toString();return '#/'+tab+(q?'?'+q:'')}
+function syncHash(){const h=curHash();if(h!==location.hash)history[location.hash?'pushState':'replaceState'](null,'',h)}
+async function route(){
+  const m=location.hash.match(/^#\/(\w+)(?:\?(.*))?$/);if(!m)return;const p=new URLSearchParams(m[2]||'');
+  proj=p.get('p')||'ALL';pg=p.get('g')==='1';flt=p.get('f')||'all';view=p.get('v')||'cards';
+  const t=TABS.some(x=>x[0]===m[1])?m[1]:'sessions';setTab(t,true);
+  const c=p.get('chat');
+  if(c){if(!D.sessions.length)await load();else draw();chatId=c;openChat(c,true)}else{chatId='';const o=$('#chatv');if(o)o.hidden=true;if(D.sessions.length)draw()}
+}
+addEventListener('popstate',route);
+function closeChat(){const o=$('#chatv');if(o)o.hidden=true;chatId='';syncHash()}
+/* ---- chat viewer (read-only transcript) ---- */
+const fmtT=ts=>ts?new Date(ts).toLocaleString([], {month:'short',day:'numeric',hour:'2-digit',minute:'2-digit'}):'';
+function mdLite(t){let h=esc(t);h=h.replace(/```([\s\S]*?)```/g,(m,c)=>'<pre>'+c.replace(/^\w*\n/,'')+'</pre>').replace(/`([^`\n]+)`/g,'<code>$1</code>').replace(/\*\*([^*\n]+)\*\*/g,'<b>$1</b>');return h}
+function chatMsg(m){
+  if(m.r==='u')return `<div class="cm cu"><div class="cw">you · ${fmtT(m.ts)}</div><div class="cb">${mdLite(m.t)}</div></div>`;
+  if(m.r==='a')return `<div class="cm ca"><div class="cw">claude · ${fmtT(m.ts)}</div><div class="cb">${mdLite(m.t)}</div></div>`;
+  if(m.r==='t')return `<div class="cm ct">⏺ ${esc(m.t)}</div>`;
+  return `<details class="cm co ${m.r==='e'?'ce':''}"><summary>⎿ ${m.r==='e'?'error':'result'} <span class="mut">${esc(m.t.slice(0,90).replace(/\n/g,' '))}</span></summary><pre>${esc(m.t)}</pre></details>`}
+async function openChat(id,fromRoute){
+  const s=D.sessions.find(x=>x.id===id);if(!s){chatId='';return}chatId=id;if(!fromRoute)syncHash();let ov=$('#chatv');if(!ov){ov=document.createElement('div');ov.id='chatv';document.body.appendChild(ov)}
+  ov.innerHTML=`<div class="chd"><div><b>${esc(s.name||s.title||s.first.slice(0,80)||id)}</b><div class="mut">${esc(short(s.cwd))} · ${id.slice(0,8)}</div></div><div class="row" style="margin:0"><label class="mut"><input type="checkbox" id="cvt" checked> tool calls</label><button id="cvo" class="primary">resume in terminal</button><button id="cvx">close</button></div></div><div class="cbody" id="cvb"><p class="mut">loading...</p></div>`;
+  ov.hidden=false;$('#cvx').onclick=closeChat;$('#cvo').onclick=()=>{ov.hidden=true;chatId='';openTerm(id,s.cwd)};
+  const tg=()=>$('#cvb').classList.toggle('notools',!$('#cvt').checked);$('#cvt').onchange=tg;
+  const r=await api('/api/transcript?id='+id);const b=$('#cvb');
+  if(r.error){b.innerHTML='<p class="mut">'+esc(r.error)+'</p>';return}
+  let start=r.start;b.innerHTML=(start>0?`<button id="cvm">load ${start} earlier messages</button>`:'')+'<div id="cvl">'+r.msgs.map(chatMsg).join('')+'</div>';
+  b.scrollTop=b.scrollHeight;
+  const more=$('#cvm');if(more)more.onclick=async()=>{const q=await api('/api/transcript?id='+id+'&before='+start);const h=b.scrollHeight;$('#cvl').insertAdjacentHTML('afterbegin',q.msgs.map(chatMsg).join(''));start=q.start;if(start>0)more.textContent='load '+start+' earlier messages';else more.remove();b.scrollTop=b.scrollHeight-h}
+}
+document.addEventListener('keydown',e=>{if(e.key==='Escape'&&$('#chatv')&&!$('#chatv').hidden)closeChat()});
+/* ---- live terminal (real claude in a pty, rendered with xterm.js) ---- */
+const TM=new Map();let curT=null;const HDR={'content-type':'application/json','x-hub':'1'};
+const tpost=(u,b)=>fetch(u,{method:'POST',headers:HDR,body:JSON.stringify(b)});
+function termTheme(){const d=getComputedStyle(document.documentElement);return{background:d.getPropertyValue('--bg').trim()||'#111418',foreground:d.getPropertyValue('--fg').trim()||'#e8eaee',cursor:'#d97757'}}
+async function openTerm(id,cwd,fallback){
+  if(typeof Terminal==='undefined'){alert('xterm.js failed to load (needs internet for the CDN)');return}
+  setTab('term');await new Promise(r=>setTimeout(r,50));
+  const pre=mkTerm();pre.el.hidden=false;TM.forEach(o=>o.el.hidden=true);try{pre.fit.fit()}catch{}
+  const r=await fetch('/api/term-start',{method:'POST',headers:HDR,body:JSON.stringify({id,cwd,fallback,cols:pre.term.cols,rows:pre.term.rows})}).then(x=>x.json());
+  if(r.error){pre.term.dispose();pre.el.remove();
+    const m=document.createElement('div');m.className='card';m.innerHTML='<b>'+esc(r.error)+'</b>'+(r.suggest?`<p class="mut">You can still read the chat. To continue it, the hub can resume it from <code>${esc(short(r.suggest))}</code> instead (it copies the saved chat file into that folder's history; the original is untouched).</p><div class="row"><button class="primary" id="tfb">Resume from ${esc(short(r.suggest))}</button><button id="tvc">view chat</button></div>`:'');
+    $('#tmain').prepend(m);if(r.suggest){m.querySelector('#tfb').onclick=()=>{m.remove();openTerm(id,cwd,r.suggest)}}m.querySelector('#tvc')&&(m.querySelector('#tvc').onclick=()=>openChat(id));return}
+  if(TM.has(r.tid)){pre.term.dispose();pre.el.remove()}else attachTerm(r.tid,r.sid,cwd,pre);
+  showTerm(r.tid);
+}
+function mkTerm(){
+  const el=document.createElement('div');el.className='tv';el.hidden=true;$('#tmain').appendChild(el);
+  const term=new Terminal({fontFamily:'"JetBrains Mono",ui-monospace,Menlo,monospace',fontSize:13,cursorBlink:true,scrollback:5000,theme:termTheme(),allowProposedApi:true});
+  const fit=new FitAddon.FitAddon();term.loadAddon(fit);term.open(el);return{el,term,fit};
+}
+function attachTerm(tid,sid,cwd,pre){
+  if(TM.has(tid))return;
+  const {el,term,fit}=pre||mkTerm();
+  const o={tid,sid,cwd,term,fit,el,alive:true};TM.set(tid,o);
+  let q=Promise.resolve();term.onData(d=>{q=q.then(()=>tpost('/api/term-in',{tid,d})).catch(()=>{})});
+  term.onResize(({cols,rows})=>tpost('/api/term-resize',{tid,cols,rows}));
+  new ResizeObserver(()=>{if(!el.hidden)try{fit.fit()}catch{}}).observe(el);
+  if(!pre)setTimeout(async()=>{try{el.hidden=false;fit.fit()}catch{};await tpost('/api/term-resize',{tid,cols:Math.max(20,term.cols-1),rows:term.rows});setTimeout(()=>tpost('/api/term-resize',{tid,cols:term.cols,rows:term.rows}),150)},300);
+  (async()=>{try{const r=await fetch('/api/term-out',{method:'POST',headers:HDR,body:JSON.stringify({tid})});const rd=r.body.getReader();
+    for(;;){const {done,value}=await rd.read();if(done)break;term.write(value)}}catch{}
+    o.alive=false;term.write('\r\n\x1b[2m[process ended - press "open in terminal" to resume this session]\x1b[0m\r\n');drawChips();load()})();
+}
+function showTerm(tid){
+  curT=tid;TM.forEach(o=>o.el.hidden=o.tid!==tid);const o=TM.get(tid);drawChips();
+  if(o){setTimeout(()=>{try{o.fit.fit()}catch{};o.term.focus()},30)}
+}
+function drawChips(){const c=$('#tchips');if(!c)return;
+  c.innerHTML=[...TM.values()].map(o=>`<span class="chip ${o.tid===curT?'on':''}" data-t="${o.tid}">${o.alive?'●':'○'} ${esc(short(o.cwd))} <span class="mut">${o.sid.slice(0,6)}</span> <a href="#" data-x="${o.tid}" title="${o.alive?'stop & close':'close'}">✕</a></span>`).join('')||'<span class="mut">no terminals open. Use "open in terminal" on a session card, or New session → Start Claude here.</span>';
+  c.querySelectorAll('.chip').forEach(x=>x.onclick=e=>{if(e.target.dataset.x)return;showTerm(x.dataset.t)});
+  c.querySelectorAll('[data-x]').forEach(a=>a.onclick=e=>{e.preventDefault();e.stopPropagation();const o=TM.get(a.dataset.x);tpost('/api/term-kill',{tid:o.tid,forget:1});o.term.dispose();o.el.remove();TM.delete(o.tid);if(curT===o.tid){curT=[...TM.keys()][0]||null;if(curT)showTerm(curT)}drawChips();load()})}
+async function drawTerm(){
+  const root=$('#trm');
+  if(!$('#tmain')){root.innerHTML='<div class="bar"><div id="tchips" class="bar" style="margin:0"></div></div><div id="tmain"></div>'}
+  const L=await fetch('/api/terms').then(r=>r.json()).catch(()=>[]);
+  for(const t of L)if(t.alive&&!TM.has(t.tid)){attachTerm(t.tid,t.sid,t.cwd)}
+  if(!curT||!TM.has(curT))curT=[...TM.keys()][0]||null;
+  drawChips();if(curT)showTerm(curT);
+}
+/* ---- new session + directory browser ---- */
+let nd='';
+async function drawNew(dir){
+  const el=$('#newp'),r=await api('/api/ls?dir='+encodeURIComponent(dir??nd));
+  if(r.error){el.innerHTML=`<p class="mut">${esc(r.error)}</p><button id="gh">go home</button>`;$('#gh').onclick=()=>drawNew('');return}
+  nd=r.dir;const rel=r.dir.slice(r.home.length).split('/').filter(Boolean);let acc=r.home;
+  const crumbs=[`<a href="#" data-d="${esc(r.home)}">~</a>`,...rel.map(p=>{acc+='/'+p;return `<a href="#" data-d="${esc(acc)}">${esc(p)}</a>`})].join(' / ');
+  el.innerHTML=`<h1>Pick a folder</h1><div class="q">${crumbs}</div>
+  <div class="row"><input id="mk" placeholder="new folder name" style="width:220px"><button id="mkb">Create folder here</button><span class="mut" id="mkm"></span></div>
+  <div class="card"><h3>${esc(short(r.dir))} ${r.git?'<span class="badge">git</span>':''} ${r.claudemd?'<span class="badge">CLAUDE.md</span>':''} <span class="badge">${r.sessions} sessions</span></h3>
+   <div class="mut">Start a session in this folder. Runs headless (claude -p) and the session appears in the list; use the copy button to continue it in a terminal.</div>
+   <div class="row"><button id="tnew" class="primary">Start Claude here (terminal view)</button></div>${sendBox('',r.dir)}<div class="row"><button id="cpn">copy: cd ... &amp;&amp; claude</button></div></div>
+  <div>${r.parent?`<div class="proj" data-d="${esc(r.parent)}"><span>.. (up)</span></div>`:''}${r.dirs.map(d=>`<div class="proj" data-d="${esc(r.dir+'/'+d.name)}"><span>${esc(d.name)}</span><span>${d.git?'<span class="badge">git</span> ':''}${d.claudemd?'<span class="badge">rules</span> ':''}${d.sessions?`<span class="badge">${d.sessions}</span>`:''}</span></div>`).join('')||'<p class="mut">no subfolders</p>'}</div>`;
+  el.querySelectorAll('[data-d]').forEach(a=>a.onclick=e=>{e.preventDefault();drawNew(a.dataset.d)});
+  $('#tnew').onclick=()=>openTerm('',r.dir);
+  $('#cpn').onclick=e=>{navigator.clipboard.writeText('cd "'+r.dir+'" && claude');e.target.textContent='copied'};
+  $('#mkb').onclick=async()=>{const x=await api('/api/mkdir',{parent:r.dir,name:$('#mk').value.trim()});if(x.error)$('#mkm').textContent=x.error;else drawNew(x.dir)};
+  bind();
+}
+/* ---- skills ---- */
+async function loadSk(box,id,cwd){
+  const [pk,sg]=await Promise.all([api('/api/project-skills?cwd='+encodeURIComponent(cwd)),api('/api/suggest?id='+id+'&cwd='+encodeURIComponent(cwd))]);
+  box.innerHTML=`<div class="mut">Skills apply to the whole folder ${esc(short(cwd))} and take effect when a session starts or resumes.</div>
+  <div class="row"><b>Enabled here:</b> ${(pk.map(k=>`<span class="pill">${esc(k.name)} ${k.link?`<a href="#" data-rm="${esc(k.name)}">remove</a>`:''}</span>`).join(''))||'<span class="mut">none in this folder</span>'}</div>
+  <div class="row"><b>Suggested:</b> ${(sg.map(k=>`<span class="pill" title="${esc(k.desc)}">${esc(k.name)} <span class="mut">(${esc(k.why)})</span> <a href="#" data-ad="${esc(k.name)}">add</a></span>`).join(''))||'<span class="mut">nothing matched</span>'}</div>
+  <div class="row"><button data-defs="1">Apply my default skills to this folder</button></div>`;
+  box.querySelectorAll('[data-rm]').forEach(a=>a.onclick=async e=>{e.preventDefault();await api('/api/skill-remove',{cwd,name:a.dataset.rm});loadSk(box,id,cwd)});
+  box.querySelectorAll('[data-ad]').forEach(a=>a.onclick=async e=>{e.preventDefault();await api('/api/skill-add',{cwd,name:a.dataset.ad});loadSk(box,id,cwd)});
+  box.querySelector('[data-defs]').onclick=async()=>{await api('/api/apply-defaults',{cwd});loadSk(box,id,cwd)};
+}
+let sq='';
+async function drawSkills(){
+  const el=$('#skl');el.innerHTML='<p class="mut">scanning skills and usage...</p>';
+  const [K,pk]=await Promise.all([api('/api/skills'),proj==='ALL'?[]:api('/api/project-skills?cwd='+encodeURIComponent(proj))]);
+  const on=new Set(pk.map(x=>x.name));
+  const AU=proj==='ALL'?null:await api('/api/skill-audit?repo='+encodeURIComponent(proj));
+  const L=K.filter(k=>!sq||(k.name+' '+k.desc+' '+k.src).toLowerCase().includes(sq.toLowerCase())).sort((a,b)=>b.isDefault-a.isDefault||b.uses-a.uses||a.name.localeCompare(b.name));
+  el.innerHTML=(AU?`<div class="card"><h3>Skill usage in ${esc(short(proj))} <span class="badge">${AU.sessions} sessions</span></h3>${AU.rows.length?AU.rows.slice(0,12).map(r=>`<div class="row"><span class="badge">${r.uses} uses</span><b>${esc(r.name)}</b><span class="mut">${esc(r.src)}${r.enabledHere?' - enabled here':''}</span></div>`).join(''):'<div class="mut">no skills used here yet</div>'}${AU.unusedEnabled.length?`<div class="q">Enabled but never used here: ${AU.unusedEnabled.map(esc).join(', ')}. Consider disabling.</div>`:''}<details><summary>${AU.globalNeverUsed.length} global skills never used in any session</summary><div class="mut">${AU.globalNeverUsed.map(esc).join(', ')||'none'}. Every global skill adds its description to every session; moving unused ones out of ~/.claude/skills saves context.</div></details></div>`:'')+`<h1>All skills (${K.length})</h1><div class="mut">global = loaded in every session. library = installed by this hub, off until enabled per folder. plugin = from an installed plugin. Star = default (one-click apply to a folder). Uses = times Claude invoked it in your transcripts.</div>
+  <div class="bar"><input id="sqi" placeholder="search skills" value="${esc(sq)}" style="flex:1;min-width:160px"><button id="top5">Set 5 most-used as defaults</button>${proj!=='ALL'?`<button id="apd">Apply defaults to ${esc(short(proj))}</button>`:'<span class="mut">pick a project in the sidebar to enable skills per folder</span>'}</div>`+
+  L.map(k=>`<div class="card"><h3>${esc(k.name)} <span class="badge">${esc(k.src)}</span> ${k.uses?`<span class="badge">${k.uses} uses</span>`:''} ${k.from?`<a class="badge" href="https://github.com/${esc(k.from)}" target="_blank" rel="noopener">${esc(k.from)}</a>`:''}</h3><div class="q">${esc(k.desc)}</div>
+   <div class="row">${k.src!=='global'?`<button data-star="${esc(k.name)}" class="${k.isDefault?'on':''}">${k.isDefault?'default':'make default'}</button>`:''}
+   ${proj!=='ALL'&&k.src!=='global'?(on.has(k.name)?`<button data-off="${esc(k.name)}">disable in project</button>`:`<button data-on="${esc(k.name)}">enable in project</button>`):''}
+   ${k.from?`<button data-un="${esc(k.name)}">uninstall</button>`:''}</div></div>`).join('');
+  $('#sqi').oninput=e=>{sq=e.target.value;clearTimeout(window._st);window._st=setTimeout(()=>{drawSkills().then(()=>{const i=$('#sqi');i.focus();i.setSelectionRange(sq.length,sq.length)})},350)};
+  $('#top5').onclick=async()=>{await api('/api/skill-defaults-top',{});drawSkills()};
+  if($('#apd'))$('#apd').onclick=async()=>{const r=await api('/api/apply-defaults',{cwd:proj});alert('added: '+((r.added||[]).join(', ')||'nothing new'));drawSkills()};
+  el.querySelectorAll('[data-star]').forEach(b=>b.onclick=async()=>{await api('/api/skill-default',{name:b.dataset.star,on:!b.classList.contains('on')});drawSkills()});
+  el.querySelectorAll('[data-on]').forEach(b=>b.onclick=async()=>{await api('/api/skill-add',{cwd:proj,name:b.dataset.on});drawSkills()});
+  el.querySelectorAll('[data-off]').forEach(b=>b.onclick=async()=>{await api('/api/skill-remove',{cwd:proj,name:b.dataset.off});drawSkills()});
+  el.querySelectorAll('[data-un]').forEach(b=>b.onclick=async()=>{if(confirm('Delete installed skill '+b.dataset.un+' from the hub library?')){await api('/api/skill-uninstall',{name:b.dataset.un});drawSkills()}});
+}
+/* ---- hyped ---- */
+let hk='skills';
+async function drawHype(){
+  const el=$('#hyp');el.innerHTML='<p class="mut">fetching from GitHub...</p>';
+  const R=await api('/api/hype?kind='+hk),g=`https://www.google.com/search?q=${encodeURIComponent(hk==='skills'?'best claude code skills github':'trending github repositories this week')}`;
+  el.innerHTML=`<div class="bar"><button data-k="skills" class="${hk==='skills'?'on':''}">Top skills repos</button><button data-k="repos" class="${hk==='repos'?'on':''}">Hot repos this week</button><button id="hr">refresh</button><a class="badge" href="${g}" target="_blank" rel="noopener">search Google</a></div>
+  <div class="mut">Live from the GitHub search API, cached 10 min. Skills are instructions Claude follows and may ship scripts. Install shows a preview first, copies into the hub library (not active anywhere), and never runs repo code.</div>`+
+  (R.error?`<p class="mut">${esc(R.error)}</p>`:R.map((r,i)=>`<div class="card" data-i="${i}"><h3><a href="${esc(r.url)}" target="_blank" rel="noopener">${esc(r.name)}</a> <span class="badge">&#9733; ${r.stars.toLocaleString()}</span> ${r.lang?`<span class="badge">${esc(r.lang)}</span>`:''}</h3><div class="q">${esc(r.desc)}</div><div class="mut">updated ${ago(Date.parse(r.pushed))}</div><div class="row"><button class="pv">Preview &amp; install skills</button></div><div class="pvb"></div></div>`).join(''));
+  el.querySelectorAll('[data-k]').forEach(b=>b.onclick=()=>{hk=b.dataset.k;drawHype()});$('#hr').onclick=drawHype;
+  el.querySelectorAll('.pv').forEach(b=>b.onclick=async()=>{
+    const c=b.closest('.card'),repo=R[c.dataset.i].name,box=c.querySelector('.pvb');box.innerHTML='<p class="mut">cloning (shallow) and scanning...</p>';
+    const P=await api('/api/install-preview',{repo});
+    if(P.error){box.innerHTML=`<p class="mut">${esc(P.error)}</p>`;return}
+    if(!P.length){box.innerHTML='<p class="mut">No SKILL.md found in this repo, so there is nothing to install. Use the link to read it.</p>';return}
+    box.innerHTML=P.map((k,j)=>`<div class="card"><label><input type="checkbox" class="ck" data-rel="${esc(k.rel)}" checked style="padding:0"> <b>${esc(k.name)}</b></label> <span class="mut">${esc(k.rel)} - ${k.fileCount} files</span><div class="q">${esc(k.desc)}</div>${k.scripts.length?`<div class="q" style="color:var(--s2)">Contains scripts: ${esc(k.scripts.slice(0,8).join(', '))}. Read them before enabling.</div>`:''}<details><summary>SKILL.md excerpt</summary><pre>${esc(k.excerpt)}</pre></details></div>`).join('')+`<div class="row"><button class="inst">Install selected to library</button><span class="mut res"></span></div>`;
+    box.querySelector('.inst').onclick=async()=>{const rels=[...box.querySelectorAll('.ck:checked')].map(x=>x.dataset.rel),r=await api('/api/install',{repo,rels});box.querySelector('.res').textContent=r.error||r.map(x=>x.name+(x.skipped?' ('+x.skipped+')':' installed')).join(', ')+'. Enable per folder in the Skills tab.'};
+  });
+}
+/* ---- optimize ---- */
+async function drawOpt(){
+  const el=$('#opt');el.innerHTML='<p class="mut">reading processes...</p>';
+  const R=await api('/api/procs'),idle=R.procs.filter(p=>!p.busy),fr=idle.reduce((a,p)=>a+p.rss,0);
+  el.innerHTML=`<div id="stats2" style="display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:12px;margin:4px 0 14px"><div class="tile"><div class="n">${R.procs.length}</div><div class="l">claude processes</div></div><div class="tile"><div class="n">${mb(R.total)}</div><div class="l">memory used by claude</div></div><div class="tile"><div class="n">${mb(R.mem.avail)}</div><div class="l">free of ${mb(R.mem.total)} RAM</div></div></div>
+  <div class="bar"><button id="ci" ${idle.length?'':'disabled'}>Close all idle (${idle.length}, frees ~${mb(fr)})</button><button id="rfo">refresh</button></div>
+  <div class="mut">Idle = no activity in that folder for 15+ minutes. Closing sends SIGTERM; transcripts stay on disk and resume with claude --resume. Unsaved terminal state is lost.</div>
+  <h1 style="margin-top:12px">Quick wins</h1>${R.tips.map(t=>`<div class="q">- ${esc(t)}</div>`).join('')}
+  <h1 style="margin-top:12px">Auto-close</h1><div class="q" id="acx">checking...</div><h1 style="margin-top:12px">Heaviest transcripts</h1><div class="mut">Big transcripts load a lot of context when resumed. For new work, start fresh and hand off with the handoff button.</div>${[...D.sessions].sort((a,b)=>b.size-a.size).slice(0,8).map(s=>`<div class="row"><span class="badge">${(s.size/1048576).toFixed(1)} MB</span><a href="#" data-j="${s.id}">${esc(s.name||s.title||s.first.slice(0,70)||s.id)}</a><span class="mut">${esc(short(s.cwd).split('/').pop())} - ${ago(s.mtime)}</span></div>`).join('')}
+  <h1 style="margin-top:12px">Processes</h1>`+R.procs.map(p=>`<div class="card"><h3>${esc(short(p.cwd))} <span class="pill st-${p.busy?'active':'later'}"><i></i>${p.busy?'busy':'idle'}</span> <span class="badge">${mb(p.rss)}</span></h3><div class="mut">pid ${p.pid} - running ${Math.round(p.age/60)} min - last activity ${p.lastActive?ago(p.lastActive):'unknown'}</div><div class="row"><button data-k="${p.pid}" data-b="${p.busy?1:''}">Close</button></div></div>`).join('');
+  $('#rfo').onclick=drawOpt;
+  el.querySelectorAll('[data-j]').forEach(a=>a.onclick=e=>{e.preventDefault();jump(a.dataset.j)});
+  api('/api/auto-close-preview').then(p=>{$('#acx').innerHTML=`${p.n} session(s) idle ${p.days}+ days with no tag. They are marked done automatically every 6 hours (running sessions and ones you tagged are never touched). Tags are backed up daily to ~/.claude/hub-backups. <button id="acn" ${p.n?'':'disabled'}>Close them now</button>`;$('#acn').onclick=async()=>{const r=await api('/api/auto-close',{});await load();drawOpt()}});
+  $('#ci').onclick=async()=>{if(!confirm('Close '+idle.length+' idle claude process(es)?'))return;await api('/api/kill-idle',{});drawOpt()};
+  el.querySelectorAll('[data-k]').forEach(b=>b.onclick=async()=>{if(b.dataset.b&&!confirm('This one was active in the last 15 minutes. Close it anyway?'))return;const r=await api('/api/kill',{pid:b.dataset.k,force:!!b.dataset.b});if(r.error)alert(r.error);drawOpt()});
+}
+
+/* ---- board ---- */
+function board(L){return `<div class="board">`+ST.map(k=>{const l=L.filter(s=>s.status===k);return `<div class="col" data-col="${k}"><div class="colh"><i style="background:var(${SC[k]})"></i>${k} <span class="badge">${l.length}</span></div>`+l.map(s=>`<div class="bc" draggable="true" data-id="${s.id}"><div class="bt">${esc(s.name||s.title||s.first.slice(0,60)||s.id)}</div><div class="mut">${esc(short(s.cwd).split('/').pop())} - ${ago(s.mtime)} ${s.running?'<span class="badge run">running</span>':''}</div>${acts(s.id)} ${tickets(s).slice(0,2).map(t=>`${D.jira?`<a class="badge" href="${D.jira}${t}" target="_blank" rel="noopener">${t}</a>`:`<span class="badge">${t}</span>`}`).join(' ')}</div>`).join('')+`</div>`}).join('')+`</div><div class="mut">Drag a card to another column to change its status.</div>`}
+function bindBoard(){
+  document.querySelectorAll('.bc').forEach(c=>c.ondragstart=e=>e.dataTransfer.setData('text/plain',c.dataset.id));
+  document.querySelectorAll('.col').forEach(c=>{c.ondragover=e=>{e.preventDefault();c.classList.add('over')};c.ondragleave=()=>c.classList.remove('over');
+    c.ondrop=async e=>{e.preventDefault();c.classList.remove('over');const id=e.dataTransfer.getData('text/plain');if(id){await api('/api/tag',{id,status:c.dataset.col});load()}}});
+}
+function jump(id){focusId=id;proj='ALL';pg=false;flt='all';$('#q').value='';setTab('sessions');draw();const c=document.querySelector(`.card[data-id="${id}"]`);if(c){c.scrollIntoView({block:'center'});c.classList.add('foc')}}
+/* ---- tickets ---- */
+function drawTickets(){
+  const m={};D.sessions.forEach(s=>[...new Set(((s.name||'')+' '+s.title+' '+s.first+' '+s.cwd).match(TRE||/$^/g)||[])].forEach(k=>(m[k]??=[]).push(s)));
+  const E=Object.entries(m).sort((a,b)=>Math.max(...b[1].map(x=>x.mtime))-Math.max(...a[1].map(x=>x.mtime)));
+  $('#tkt').innerHTML=`<h1>Tickets (${E.length})</h1><div class="mut">Sessions grouped by ticket id (set TICKET_PREFIXES and JIRA_BASE to enable) found in the name, title, first prompt or folder, across all repos.</div><div class="bar"><input id="tq" placeholder="filter ticket or text" style="flex:1"></div><div id="tl"></div>`;
+  const draw2=()=>{const q=($('#tq').value||'').toLowerCase();$('#tl').innerHTML=E.filter(([k,l])=>!q||k.toLowerCase().includes(q)||l.some(s=>(s.name+' '+s.title).toLowerCase().includes(q))).map(([k,l])=>{const repos=[...new Set(l.map(s=>(s.repo||s.cwd).split('/').pop()))];return `<div class="card"><h3>${D.jira?`<a href="${D.jira}${k}" target="_blank" rel="noopener">${k}</a>`:k} <span class="badge">${l.length} sessions</span> ${repos.map(r=>`<span class="badge">${esc(r)}</span>`).join(' ')}</h3>`+l.sort((a,b)=>b.mtime-a.mtime).slice(0,8).map(s=>`<div class="row"><span class="pill st-${s.status}"><i></i>${s.status}</span><a href="#" data-j="${s.id}">${esc(s.name||s.title||s.first.slice(0,70)||s.id)}</a><span class="mut">${esc(short(s.cwd).split('/').pop())} - ${ago(s.mtime)}</span> ${acts(s.id)}</div>`).join('')+`</div>`}).join('')||'<p class="mut">none</p>';
+    $('#tl').querySelectorAll('[data-j]').forEach(a=>a.onclick=e=>{e.preventDefault();jump(a.dataset.j)})};
+  $('#tq').oninput=draw2;draw2();
+}
+/* ---- worktrees ---- */
+async function drawWt(fresh){
+  const el=$('#wtp');el.innerHTML='<p class="mut">scanning worktrees (git status on each, about 10-20 s)...</p>';
+  const W=await api('/api/worktrees'+(fresh?'?fresh=1':'')),el2=W.rows.filter(r=>r.eligible),sk=r=>r.path.replace(/^\/home\/[^/]+\/projects\//,'');
+  el.innerHTML=`<h1>Worktrees (${W.rows.length})</h1><div class="mut">Eligible = idle ${W.idleDays}+ days (last commit and last Claude session), clean, nothing unpushed, not running. Removal uses git worktree remove without --force; branches are kept.</div>
+  <div class="bar"><button id="wre" ${el2.length?'':'disabled'}>Remove all eligible (${el2.length})</button><button id="wrf">rescan</button><span class="mut" id="wm"></span></div>
+  ${W.orphans.length?`<div class="card"><h3>Orphans (${W.orphans.length}) <span class="mut">git link points at a deleted repo</span></h3>${W.orphans.map(o=>`<div class="row"><span>${esc(sk({path:o}))}</span><button data-o="${esc(o)}">delete folder</button></div>`).join('')}</div>`:''}
+  <div class="bar"><select id="wsf"><option value="all">all states</option><option value="eligible">eligible</option><option value="recent">recent</option><option value="dirty">dirty</option><option value="unpushed">unpushed</option><option value="missing">missing</option><option value="running">running</option></select><input id="wsq" placeholder="filter by repo / name / branch" style="min-width:220px"><button id="wsa">select shown</button><button id="wsn">clear</button>
+   <label class="mut"><input type="checkbox" id="wdb"> also delete branch (only if fully merged)</label><button id="wrs" class="primary" disabled>Remove selected (0)</button></div>
+  <div id="wbox"></div><div class="tw"><table id="wtt"></table></div>`;
+  $('#wrf').onclick=()=>drawWt(true);
+  $('#wre').onclick=async()=>{if(!confirm('Remove '+el2.length+' eligible worktrees? Branches are kept; ignored files like .env in them are deleted.'))return;$('#wm').textContent='removing...';const r=await api('/api/wt-remove-eligible',{});alert('removed '+r.removed+', failed '+r.failed+(r.errors.length?'\n'+r.errors.join('\n'):''));drawWt(true)};
+  const sel=new Set();
+  const shown=()=>{const f=$('#wsf').value,q=$('#wsq').value.toLowerCase();return W.rows.filter(r=>(f==='all'||r.state===f)&&(!q||(r.repo+' '+r.path+' '+(r.branch||'')).toLowerCase().includes(q)))};
+  const upd=()=>{const n=sel.size;$('#wrs').textContent='Remove selected ('+n+')';$('#wrs').disabled=!n};
+  const paint=()=>{const R=shown();$('#wtt').innerHTML='<tr><th></th><th>repo</th><th>worktree</th><th>branch</th><th>idle</th><th>dirty</th><th>unpushed</th><th>size</th><th>state</th></tr>'+R.map(r=>`<tr><td><input type="checkbox" data-s="${esc(r.path)}" ${sel.has(r.path)?'checked':''} ${r.state==='running'?'disabled':''}></td><td>${esc(r.repo.split('/').pop())}</td><td title="${esc(r.path)}">${esc(sk(r).split('/').slice(-1)[0])}</td><td>${esc(r.branch||'')}</td><td>${r.missing?'':r.days+'d'}</td><td>${r.dirty||''}</td><td>${r.unpushed||''}</td><td data-sz="${esc(r.path)}"></td><td><span class="pill st-${r.eligible?'done':r.state==='running'?'active':'later'}"><i></i>${r.state}</span></td></tr>`).join('');
+    $('#wtt').querySelectorAll('[data-s]').forEach(c=>c.onchange=()=>{c.checked?sel.add(c.dataset.s):sel.delete(c.dataset.s);upd()});upd()};
+  $('#wsf').onchange=paint;$('#wsq').oninput=paint;$('#wsa').onclick=()=>{shown().filter(r=>r.state!=='running').forEach(r=>sel.add(r.path));paint()};$('#wsn').onclick=()=>{sel.clear();paint()};
+  $('#wrs').onclick=()=>{
+    const rows=W.rows.filter(r=>sel.has(r.path)),risky=rows.filter(r=>r.dirty||r.unpushed),box=$('#wbox'),db=$('#wdb').checked;
+    box.innerHTML=`<div class="card"><b>Remove ${rows.length} worktree(s)?</b>
+      <div class="mut">The checked-out folder is deleted, including ignored files such as .env. ${db?'Branches are deleted only if fully merged.':'Branches are kept, so committed work is not lost.'}</div>
+      ${risky.length?`<div class="mut" style="color:#d33">${risky.length} have uncommitted changes or unpushed commits: ${risky.slice(0,6).map(r=>esc(sk(r).split('/').pop())+' ('+(r.dirty?r.dirty+' dirty':'')+(r.dirty&&r.unpushed?', ':'')+(r.unpushed?r.unpushed+' unpushed':'')+')').join('; ')}${risky.length>6?' ...':''}. Uncommitted changes will be LOST.</div><label><input type="checkbox" id="wfc"> I understand, force-remove those too</label>`:''}
+      <div class="row"><button class="primary" id="wgo">Yes, remove</button><button id="wno">cancel</button></div></div>`;
+    $('#wno').onclick=()=>box.innerHTML='';
+    $('#wgo').onclick=async()=>{const force=!!($('#wfc')&&$('#wfc').checked),paths=rows.filter(r=>force||!(r.dirty||r.unpushed)||r.eligible).map(r=>r.path);
+      $('#wgo').disabled=true;$('#wgo').textContent='removing...';
+      const res=await api('/api/wt-remove-many',{paths,force,deleteBranch:db});const ok=res.filter(x=>x.ok).length,bad=res.filter(x=>x.error);
+      box.innerHTML=`<div class="card"><b>Removed ${ok} of ${rows.length}.</b>${rows.length-paths.length?`<div class="mut">${rows.length-paths.length} skipped (dirty/unpushed, force not ticked).</div>`:''}${bad.map(x=>`<div class="mut" style="color:#d33">${esc(sk({path:x.path}))}: ${esc(x.error)}</div>`).join('')}<div class="row"><button id="wdone">refresh list</button></div></div>`;
+      $('#wdone').onclick=()=>drawWt(true)}};
+  paint();
+  el.querySelectorAll('[data-o]').forEach(b=>b.onclick=async()=>{if(!confirm('Delete orphan folder '+b.dataset.o+'?'))return;const r=await api('/api/orphan-remove',{path:b.dataset.o});if(r.error)alert(r.error);drawWt(true)});
+  for(const td of el.querySelectorAll('[data-sz]')){if(tab!=='wt')break;const r=await api('/api/du?path='+encodeURIComponent(td.dataset.sz));if(r.kb!=null)td.textContent=r.kb>1024?(r.kb/1024).toFixed(0)+' MB':r.kb+' KB'}
+}
+/* ---- transcript search ---- */
+let lastQ='';
+async function drawSearch(){
+  const el=$('#srp');if($('#q').value)lastQ=$('#q').value;
+  el.innerHTML=`<div class="bar"><input id="sq2" value="${esc(lastQ)}" placeholder="text to find inside all chats (3+ chars)" style="flex:1"><button id="sg">Search</button></div><div id="sr"></div>`;
+  const go=async()=>{lastQ=$('#sq2').value;if(lastQ.trim().length<3){$('#sr').innerHTML='<p class="mut">type at least 3 characters</p>';return}$('#sr').innerHTML='<p class="mut">searching all transcripts...</p>';
+    const R=await api('/api/search?q='+encodeURIComponent(lastQ)),re=new RegExp('('+lastQ.replace(/[.*+?^${}()|[\]\\]/g,'\\$&')+')','ig');
+    $('#sr').innerHTML=R.length?`<div class="mut">${R.length} session(s) matched${R.length>=40?' (showing 40 most recent)':''}</div>`+R.map(r=>`<div class="card"><h3><a href="#" data-j="${r.id}">${esc(r.title)}</a> <span class="badge">${esc(r.repo.split('/').pop())}</span> <span class="mut">${ago(r.mtime)}</span> ${acts(r.id)}</h3>${r.hits.map(x=>`<div class="q"><b>${x.who==='user'?'you':'claude'}:</b> ${esc(x.text).replace(re,'<span class="hl">$1</span>')}</div>`).join('')}</div>`).join(''):'<p class="mut">no matches</p>';
+    $('#sr').querySelectorAll('[data-j]').forEach(a=>a.onclick=e=>{e.preventDefault();jump(a.dataset.j)})};
+  $('#sg').onclick=go;$('#sq2').onkeydown=e=>{if(e.key==='Enter')go()};if(lastQ.length>=3)go();
+}
+$('#qs').onclick=()=>setTab('search');
+/* ---- theme + shortcuts ---- */
+$('#th').onclick=()=>{const d=document.documentElement,cur=d.dataset.theme||(matchMedia('(prefers-color-scheme: dark)').matches?'dark':'light'),n=cur==='dark'?'light':'dark';d.dataset.theme=n;LSx.set('theme',n)};
+document.body.insertAdjacentHTML('beforeend','<div id="help"><b>Shortcuts</b><br>/ search &nbsp; j / k next / previous card<br>a active &nbsp; l later &nbsp; r revisit &nbsp; d done<br>b board / cards &nbsp; ? this help</div>');
+document.addEventListener('keydown',e=>{
+  if(e.ctrlKey||e.metaKey||e.altKey)return;const t=e.target.tagName;if(/INPUT|TEXTAREA|SELECT/.test(t))return;
+  const cards=[...document.querySelectorAll('#list .card')];let i=cards.findIndex(c=>c.classList.contains('foc'));
+  if(e.key==='/'){e.preventDefault();setTab('sessions');$('#q').focus()}
+  else if(e.key==='?')$('#help').style.display=$('#help').style.display==='block'?'none':'block';
+  else if(e.key==='b'){view=view==='board'?'cards':'board';draw()}
+  else if((e.key==='j'||e.key==='k')&&cards.length){if(i>=0)cards[i].classList.remove('foc');i=e.key==='j'?Math.min(cards.length-1,i+1):Math.max(0,i-1);cards[i].classList.add('foc');cards[i].scrollIntoView({block:'center'})}
+  else if('alrd'.includes(e.key)&&i>=0){const k={a:'active',l:'later',r:'revisit',d:'done'}[e.key],id=cards[i].dataset.id;api('/api/tag',{id,status:k}).then(()=>{focusId=id;load()})}
+});
+if(/^#\/\w+/.test(location.hash))route();else setTab('sessions');
+$('#q').oninput=draw;$('#hb').onchange=draw;
+load();setInterval(()=>{if(document.querySelector('#list .live:not([hidden])'))return;if(!document.activeElement||!/INPUT|TEXTAREA/.test(document.activeElement.tagName))load()},10000);
+</script><div id="tip"></div></body></html>
