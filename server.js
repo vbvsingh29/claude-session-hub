@@ -122,8 +122,11 @@ function safeRulePath(p) {
 }
 function runClaude(cwd, id, prompt) {
   return new Promise(res => {
-    const args = ['-p', prompt]; if (id) args.unshift('--resume', id);
-    const c = spawn('claude', args, { cwd: fs.existsSync(cwd) ? cwd : HOME });
+    if (id && !UUID.test(String(id))) return res({ code: -1, out: '', err: 'bad session id' });
+    const args = ['-p']; if (id) args.unshift('--resume', String(id));
+    let wd; try { wd = okCwd(cwd); } catch { wd = HOME; }
+    const c = spawn('claude', args, { cwd: wd, stdio: ['pipe', 'pipe', 'pipe'] });
+    c.stdin.on('error', () => {}); c.stdin.end(String(prompt || ''));
     let out = '', err = ''; c.stdout.on('data', d => out += d); c.stderr.on('data', d => err += d);
     const to = setTimeout(() => c.kill(), 600000);
     c.on('close', code => { clearTimeout(to); res({ code, out, err }); });
@@ -165,14 +168,15 @@ function sessionChanges(id) {
   const v = { files: Object.values(files).sort((a, b) => b.last - a.last), commits, prs: [...prs] };
   chCache.set(id, { m: st.mtimeMs, v }); return v;
 }
-function git(cwd, args, t = 8000) { try { return execFileSync('git', args, { cwd, timeout: t, encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] }).trim(); } catch { return ''; } }
+const GSAFE = ['-c', 'core.fsmonitor=false', '-c', 'core.hooksPath=/dev/null', '-c', 'core.sshCommand=false'];
+function git(cwd, args, t = 8000) { try { return execFileSync('git', [...GSAFE, ...args], { cwd, timeout: t, encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] }).trim(); } catch { return ''; } }
 function gitInfo(cwd) {
   const r = path.resolve(cwd);
   if (!r.startsWith(HOME + path.sep) || !fs.existsSync(r)) return { error: 'cwd missing or outside home' };
   if (!git(r, ['rev-parse', '--git-dir'])) return { error: 'not a git repo' };
   const branch = git(r, ['branch', '--show-current']);
   let remote = git(r, ['remote', 'get-url', 'origin']).replace(/^git@(github\.com|bitbucket\.org):/, 'https://$1/').replace(/^https:\/\/[^@\/]+@/, 'https://').replace(/\.git$/, '');
-  if (!/^https:\/\/(github\.com|bitbucket\.org)\//.test(remote)) remote = '';
+  if (!/^https:\/\/(github\.com|bitbucket\.org)\/[\w.-]+\/[\w.-]+$/.test(remote)) remote = '';
   const log = git(r, ['log', '-20', '--format=%h|%an|%ar|%s']).split('\n').filter(Boolean).map(x => { const [h, a, d, ...m] = x.split('|'); return { hash: h, author: a, when: d, msg: m.join('|') }; });
   const status = git(r, ['status', '--short']).split('\n').filter(Boolean);
   let prs = [];
@@ -455,6 +459,7 @@ function transcript(id, before, limit) {
   const end = before > 0 ? Math.min(before, out.length) : out.length, start = Math.max(0, end - limit);
   return { total: out.length, start, msgs: out.slice(start, end) };
 }
+const UUID = /^[0-9a-f]{8}(-[0-9a-f]{4}){3}-[0-9a-f]{12}$/i;
 const terms = new Map(); let termSeq = 0;
 const body = req => new Promise(r => { let b = ''; req.on('data', d => b += d); req.on('end', () => { try { r(JSON.parse(b || '{}')); } catch { r({}); } }); });
 
@@ -464,6 +469,7 @@ http.createServer(async (req, res) => {
   const u = new URL(req.url, 'http://x');
   try {
     if (req.method === 'GET' && u.pathname === '/') { res.writeHead(200, { 'content-type': 'text/html' }); return res.end(fs.readFileSync(path.join(__dirname, 'index.html'))); }
+    if (u.pathname.startsWith('/api/') && req.headers['x-hub'] !== '1') return json(res, 403, { error: 'missing header' });
     if (req.method === 'GET' && u.pathname === '/api/sessions') return json(res, 200, { ...allSessions(), jira: JIRA, tickets: TICKETS });
     if (req.method === 'GET' && u.pathname === '/api/ls') return json(res, 200, lsDir(u.searchParams.get('dir')));
     if (req.method === 'GET' && u.pathname === '/api/skills') { const cfg = readCfg(), use = skillUsage(); return json(res, 200, scanSkills().map(k => ({ ...k, dir: undefined, isDefault: cfg.defaults.includes(k.name), uses: use[k.name] || 0, from: cfg.installed[k.name] || '' }))); }
@@ -507,7 +513,7 @@ http.createServer(async (req, res) => {
       if (u.pathname === '/api/send') return json(res, 200, await runClaude(b.cwd, b.id, b.prompt));
       if (u.pathname === '/api/term-start') {
         const sid = b.id ? String(b.id) : require('crypto').randomUUID();
-        if (!/^[\w-]+$/.test(sid)) throw new Error('bad id');
+        if (b.id && !UUID.test(sid)) throw new Error('bad id');
         let cwd;
         if (b.id && b.cwd && !fs.existsSync(b.cwd)) {
           const old = path.resolve(b.cwd), alt = old.replace(HOME + '/projects/backup/', HOME + '/projects/');
@@ -540,11 +546,13 @@ http.createServer(async (req, res) => {
       if (u.pathname === '/api/term-resize') { const t = terms.get(b.tid); if (t && t.alive) t.proc.stdin.write(JSON.stringify({ r: [Math.min(400, +b.cols || 120), Math.min(200, +b.rows || 32)] }) + '\n'); return json(res, 200, { ok: 1 }); }
       if (u.pathname === '/api/term-kill') { const t = terms.get(b.tid); if (t) { try { t.proc.stdin.end(); setTimeout(() => t.alive && t.proc.kill(), 1500); } catch {} if (b.forget) terms.delete(b.tid); } return json(res, 200, { ok: 1 }); }
       if (u.pathname === '/api/send-stream') {
-        const args = ['-p', String(b.prompt || ''), '--output-format', 'stream-json', '--verbose', '--include-partial-messages'];
+        if (b.id && !UUID.test(String(b.id))) throw new Error('bad session id');
+        const wd = okCwd(b.cwd), args = ['-p', '--output-format', 'stream-json', '--verbose', '--include-partial-messages'];
         if (b.id) args.unshift('--resume', String(b.id));
         if (['acceptEdits', 'plan'].includes(b.mode)) args.push('--permission-mode', b.mode);
         res.writeHead(200, { 'content-type': 'application/x-ndjson; charset=utf-8', 'cache-control': 'no-store', 'x-accel-buffering': 'no' });
-        const c = spawn('claude', args, { cwd: fs.existsSync(b.cwd) ? b.cwd : HOME, stdio: ['ignore', 'pipe', 'pipe'] });
+        const c = spawn('claude', args, { cwd: wd, stdio: ['pipe', 'pipe', 'pipe'] });
+        c.stdin.on('error', () => {}); c.stdin.end(String(b.prompt || ''));
         c.stdout.on('data', d => res.write(d));
         c.stderr.on('data', d => res.write(JSON.stringify({ type: 'hub_stderr', text: String(d) }) + '\n'));
         const to = setTimeout(() => c.kill(), 600000);

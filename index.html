@@ -76,7 +76,7 @@ const ST=['active','later','revisit','done'];
 let TK=[],TRE=null,openG=new Map(),pg=false,tab='sessions',D={sessions:[],liveProcs:0,jira:''},focusId='',proj='ALL',flt='all',rulesCache={},view='cards';
 const LSx={get:k=>{try{return localStorage.getItem('hub.'+k)}catch{return null}},set:(k,v)=>{try{localStorage.setItem('hub.'+k,v)}catch{}}};
 try{const t=LSx.get('theme');if(t)document.documentElement.dataset.theme=t;proj=LSx.get('proj')||'ALL';pg=LSx.get('pg')==='1';flt=LSx.get('flt')||'all';view=LSx.get('view')||'cards';openG=new Map(JSON.parse(LSx.get('open')||'[]'))}catch{}
-const api=(p,b)=>fetch(p,b?{method:'POST',headers:{'content-type':'application/json','x-hub':'1'},body:JSON.stringify(b)}:{}).then(r=>r.json());
+const api=(p,b)=>fetch(p,b?{method:'POST',headers:{'content-type':'application/json','x-hub':'1'},body:JSON.stringify(b)}:{headers:{'x-hub':'1'}}).then(r=>r.json());
 const ago=t=>{const s=(Date.now()-t)/1000;return s<60?'now':s<3600?Math.floor(s/60)+'m ago':s<86400?Math.floor(s/3600)+'h ago':Math.floor(s/86400)+'d ago'};
 const fmt=t=>t?new Date(t).toLocaleString([],{dateStyle:'medium',timeStyle:'short'}):'?';
 const link=s=>esc(s).replace(/(https?:\/\/[^\s<)]+)/g,'<a href="$1" target="_blank" rel="noopener">$1</a>').replace(TRE?new RegExp(TRE.source,'g'):/$^/,(m,o,str)=>!D.jira||str.slice(Math.max(0,o-2),o)==='">'||str.slice(o-1,o)==='/'?m:`<a href="${D.jira}${m}" target="_blank" rel="noopener">${m}</a>`);
@@ -142,7 +142,7 @@ function bind(){
     c.querySelector('.rn').onclick=async()=>{const s=D.sessions.find(x=>x.id===id);const n=prompt('Rename session (empty = reset)',s.name||s.title||'');if(n===null)return;await api('/api/tag',{id,name:n.trim()});load()};
     c.querySelector('.vc').onclick=()=>openChat(id);
     c.querySelector('.ot').onclick=()=>{const s=D.sessions.find(x=>x.id===id);openTerm(id,s.cwd)};
-    c.querySelector('.ho').onclick=async e=>{const t=await fetch('/api/handoff?id='+id).then(x=>x.text());try{await navigator.clipboard.writeText(t);e.target.textContent='copied'}catch{e.target.textContent='copy failed'}};
+    c.querySelector('.ho').onclick=async e=>{const t=await fetch('/api/handoff?id='+id,{headers:{'x-hub':'1'}}).then(x=>x.text());try{await navigator.clipboard.writeText(t);e.target.textContent='copied'}catch{e.target.textContent='copy failed'}};
     c.querySelector('.cp').onclick=e=>{navigator.clipboard.writeText(e.target.dataset.c.replace(/&amp;/g,'&'));e.target.textContent='copied'};
   });
   document.querySelectorAll('.card .cd').forEach(d=>d.addEventListener('toggle',async()=>{if(!d.open||d.dataset.l)return;d.dataset.l=1;d.querySelector('.cdb').innerHTML=chHtml(await api('/api/changes?id='+d.closest('.card').dataset.id),'')}));
@@ -178,7 +178,7 @@ function bind(){
 }
 function chHtml(c,remote){
   const f=c.files.map(x=>`<div class="mut">${x.writes?'new/overwritten':'edited'} x${x.edits+x.writes} - ${esc(short(x.path))}</div>`).join('')||'<div class="mut">no file edits</div>';
-  const cm=c.commits.map(x=>`<div>${remote?`<a href="${remote}/commit/${x.hash}" target="_blank" rel="noopener">${x.hash}</a>`:x.hash} <span class="mut">${esc(x.branch)}</span> ${link(x.msg)}</div>`).join('')||'<div class="mut">no commits</div>';
+  const cm=c.commits.map(x=>`<div>${remote?`<a href="${esc(remote)}/commit/${esc(x.hash)}" target="_blank" rel="noopener">${x.hash}</a>`:x.hash} <span class="mut">${esc(x.branch)}</span> ${link(x.msg)}</div>`).join('')||'<div class="mut">no commits</div>';
   const pr=c.prs.map(u=>`<div><a href="${esc(u)}" target="_blank" rel="noopener">${esc(u.replace(/^https:\/\/[^/]+\//,''))}</a></div>`).join('')||'<div class="mut">no PRs</div>';
   return `<b>Files (${c.files.length})</b>${f}<b>Commits (${c.commits.length})</b>${cm}<b>PRs (${c.prs.length})</b>${pr}`}
 async function drawChanges(){
@@ -192,7 +192,7 @@ async function drawChanges(){
     h+=`<div class="card"><h3>Branch: ${esc(g.branch||'(detached)')}</h3>`+
       `<b>Pull requests</b>`+(g.prs.map(p=>`<div><a href="${esc(p.url)}" target="_blank" rel="noopener">#${p.number}</a> <span class="badge">${esc(p.state)}</span> ${esc(p.title)}</div>`).join('')||'<div class="mut">none for this branch (or gh not authed)</div>')+
       `<br><b>Uncommitted (${g.status.length})</b><pre>${esc(g.status.join('\n')||'clean')}</pre>`+
-      `<b>Recent commits</b>`+g.log.map(x=>`<div>${g.remote?`<a href="${g.remote}/${g.host==='bb'?'commits':'commit'}/${x.hash}" target="_blank" rel="noopener">${x.hash}</a>`:x.hash} ${esc(x.msg)} <span class="mut">- ${esc(x.author)}, ${esc(x.when)}</span></div>`).join('')+`</div>`;}
+      `<b>Recent commits</b>`+g.log.map(x=>`<div>${g.remote?`<a href="${esc(g.remote)}/${g.host==='bb'?'commits':'commit'}/${x.hash}" target="_blank" rel="noopener">${x.hash}</a>`:x.hash} ${esc(x.msg)} <span class="mut">- ${esc(x.author)}, ${esc(x.when)}</span></div>`).join('')+`</div>`;}
   h+='<h1>Changes made by sessions (latest 20)</h1>'+cs.map(({s,c})=>`<div class="card"><h3>${esc(s.name||s.title||s.first.slice(0,70)||s.id)} ${acts(s.id)}</h3><div class="mut">${fmt(s.created)} to ${fmt(s.mtime)}</div>${chHtml(c,g.remote||'')}</div>`).join('');
   el.innerHTML=h;
 }
@@ -297,7 +297,7 @@ function drawChips(){const c=$('#tchips');if(!c)return;
 async function drawTerm(){
   const root=$('#trm');
   if(!$('#tmain')){root.innerHTML='<div class="bar"><div id="tchips" class="bar" style="margin:0"></div></div><div id="tmain"></div>'}
-  const L=await fetch('/api/terms').then(r=>r.json()).catch(()=>[]);
+  const L=await fetch('/api/terms',{headers:{'x-hub':'1'}}).then(r=>r.json()).catch(()=>[]);
   for(const t of L)if(t.alive&&!TM.has(t.tid)){attachTerm(t.tid,t.sid,t.cwd)}
   if(!curT||!TM.has(curT))curT=[...TM.keys()][0]||null;
   drawChips();if(curT)showTerm(curT);
